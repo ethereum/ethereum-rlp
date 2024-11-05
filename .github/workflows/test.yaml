@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        py: [ "3.10", "pypy3.10" ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+
+      - name: Install Tox and any other packages
+        run: "pip install 'tox>=4.11,<5' requests"
+
+      - name: Run Tox (CPython)
+        if: "${{ !startsWith(matrix.py, 'pypy') }}"
+        run: tox -e static,py3
+
+      - name: Run Tox (PyPy)
+        if: "${{ startsWith(matrix.py, 'pypy') }}"
+        run: tox -e pypy3
+        env:
+          PYPY_GC_MAX: "10G"
