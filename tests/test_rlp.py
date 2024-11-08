@@ -300,7 +300,7 @@ class WithInt:
 
 
 def test_decode_to__int() -> None:
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(DecodingError):
         rlp.decode_to(WithInt, b"\xc1\x00")
 
 
@@ -414,18 +414,23 @@ class WithNonRlp:
 
 
 def test_decode_to__annotation_non_rlp() -> None:
-    with pytest.raises(NotImplementedError, match="RLP non-type"):
+    with pytest.raises(DecodingError, match="RLP non-type"):
         rlp.decode_to(WithNonRlp, b"\xc2\xc1\x01")
 
 
 @dataclass
 class WithList:
-    items: List[Uint]
+    items: List[Union[Bytes1, Bytes4]]
 
 
 def test_decode_to__list_bytes() -> None:
     with pytest.raises(DecodingError, match="invalid list"):
         rlp.decode_to(WithList, b"\xc1\x80")
+
+
+def test_decode_to__list_invalid_union() -> None:
+    with pytest.raises(DecodingError, match="list item 0"):
+        rlp.decode_to(WithList, b"\xc2\xc1\xc0")
 
 
 #
