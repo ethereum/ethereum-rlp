@@ -152,7 +152,10 @@ def decode_to(cls: Type[U], encoded_data: Bytes) -> U:
     a `Bytes` subclass, a dataclass, `Uint`, `U256` or `Tuple[cls]`.
     """
     decoded = decode(encoded_data)
-    return _deserialize_to(cls, decoded)
+    try:
+        return _deserialize_to(cls, decoded)
+    except Exception as e:
+        raise DecodingError(f"cannot decode into `{cls.__name__}`") from e
 
 
 @overload
@@ -200,7 +203,11 @@ def _deserialize_to_dataclass(cls: Type[U], decoded: Simple) -> U:
 
     for value, target_field in zip(decoded, target_fields):
         resolved_type = hints[target_field.name]
-        values[target_field.name] = _deserialize_to(resolved_type, value)
+        try:
+            values[target_field.name] = _deserialize_to(resolved_type, value)
+        except Exception as e:
+            msg = f"cannot decode field `{cls.__name__}.{target_field.name}`"
+            raise DecodingError(msg) from e
 
     result = cls(**values)
     assert isinstance(result, cls)
@@ -286,8 +293,13 @@ def _deserialize_to_tuple(
         arguments = list(arguments) + [arguments[-1]] * fill_count
 
     decoded = []
-    for argument, value in zip(arguments, values):
-        decoded.append(_deserialize_to(argument, value))
+    for index, (argument, value) in enumerate(zip(arguments, values)):
+        try:
+            deserialized = _deserialize_to(argument, value)
+        except Exception as e:
+            msg = f"cannot decode tuple element {index} of type `{argument}`"
+            raise DecodingError(msg) from e
+        decoded.append(deserialized)
 
     return tuple(decoded)
 
@@ -298,7 +310,15 @@ def _deserialize_to_list(
     if isinstance(values, bytes):
         raise DecodingError("invalid list")
     argument = get_args(annotation)[0]
-    return [_deserialize_to(argument, v) for v in values]
+    results = []
+    for index, value in enumerate(values):
+        try:
+            deserialized = _deserialize_to(argument, value)
+        except Exception as e:
+            msg = f"cannot decode list item {index} of type `{annotation}`"
+            raise DecodingError(msg) from e
+        results.append(deserialized)
+    return results
 
 
 def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
