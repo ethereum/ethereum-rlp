@@ -1,6 +1,15 @@
 import re
 from dataclasses import dataclass
-from typing import List, Mapping, NoReturn, Sequence, Tuple, Union, cast
+from typing import (
+    Annotated,
+    List,
+    Mapping,
+    NoReturn,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 
 import pytest
 from ethereum_types.bytes import Bytes, Bytes1, Bytes4, Bytes32
@@ -431,6 +440,95 @@ def test_decode_to__list_bytes() -> None:
 def test_decode_to__list_invalid_union() -> None:
     with pytest.raises(DecodingError, match="list item 0"):
         rlp.decode_to(WithList, b"\xc2\xc1\xc0")
+
+
+def decode_len(foo: rlp.Simple) -> Uint:
+    if isinstance(foo, bytes):
+        raise ValueError("decode_len got bytes")
+    return Uint(len(foo))
+
+
+@dataclass
+class WithAnnotated:
+    foo: Annotated[Uint, rlp.With(decode_len)]
+
+
+def test_decode_to__with_zero() -> None:
+    actual = rlp.decode_to(WithAnnotated, b"\xc1\xc0")
+    assert isinstance(actual.foo, Uint)
+    assert actual.foo == Uint(0)
+
+
+def test_decode_to__with_one() -> None:
+    actual = rlp.decode_to(WithAnnotated, b"\xc2\xc1\x80")
+    assert isinstance(actual.foo, Uint)
+    assert actual.foo == Uint(1)
+
+
+def test_decode_to__with_bytes() -> None:
+    with pytest.raises(DecodingError, match="decode_len got bytes"):
+        rlp.decode_to(WithAnnotated, b"\xc1\x78")
+
+
+@dataclass
+class WithUnrelatedAnnotated:
+    foo: Annotated[Uint, "ignore me!"]
+
+
+def test_decode_to__with_unrelated_invalid_uint() -> None:
+    with pytest.raises(DecodingError, match="invalid uint"):
+        rlp.decode_to(WithUnrelatedAnnotated, b"\xc1\xc0")
+
+
+def test_decode_to__with_unrelated() -> None:
+    actual = rlp.decode_to(WithUnrelatedAnnotated, b"\xc2\x81\xff")
+    assert isinstance(actual.foo, Uint)
+    assert actual.foo == Uint(255)
+
+
+@dataclass
+class WithTwoAnnotated:
+    foo: Annotated[Uint, rlp.With(decode_len), rlp.With(decode_len)]
+
+
+def test_decode_to__with_two_annotated() -> None:
+    with pytest.raises(DecodingError, match="multiple rlp\\.With annotations"):
+        rlp.decode_to(WithTwoAnnotated, b"\xc1\xc0")
+
+
+def decode_wrong(foo: rlp.Simple) -> Extended:
+    return [Uint(1)]
+
+
+@dataclass
+class WithAnnotatedWrongType:
+    foo: Annotated[Uint, rlp.With(decode_wrong)]
+
+
+def test_decode_to__with_wrong_type() -> None:
+    with pytest.raises(DecodingError, match="annotated returned wrong type"):
+        rlp.decode_to(WithAnnotatedWrongType, b"\xc1\xc0")
+
+
+@dataclass
+class WithAnnotatedWrongTypeUnion:
+    foo: Annotated[NoReturn, rlp.With(decode_wrong)]
+
+
+def test_decode_to__with_wrong_type_union() -> None:
+    with pytest.raises(DecodingError, match="doesn't support isinstance"):
+        rlp.decode_to(WithAnnotatedWrongTypeUnion, b"\xc1\xc0")
+
+
+@dataclass
+class WithAnnotatedUnion:
+    foo: Annotated[Union[Uint, U8], rlp.With(decode_len)]
+
+
+def test_decode_to__with_union() -> None:
+    actual = rlp.decode_to(WithAnnotatedUnion, b"\xc2\xc1\x80")
+    assert isinstance(actual.foo, Uint)
+    assert actual.foo == Uint(1)
 
 
 #

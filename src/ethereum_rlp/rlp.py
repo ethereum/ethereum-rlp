@@ -4,7 +4,9 @@ Defines the serialization and deserialization format used throughout Ethereum.
 
 from dataclasses import Field, astuple, fields, is_dataclass
 from typing import (
+    Annotated,
     Any,
+    Callable,
     ClassVar,
     Dict,
     List,
@@ -20,6 +22,7 @@ from typing import (
     get_origin,
     get_type_hints,
     overload,
+    runtime_checkable,
 )
 
 from ethereum_types.bytes import Bytes, FixedBytes
@@ -153,22 +156,37 @@ def decode_to(cls: Type[U], encoded_data: Bytes) -> U:
     """
     decoded = decode(encoded_data)
     try:
-        return _deserialize_to(cls, decoded)
+        return deserialize_to(cls, decoded)
     except Exception as e:
         raise DecodingError(f"cannot decode into `{cls.__name__}`") from e
 
 
 @overload
-def _deserialize_to(class_: Type[U], value: Simple) -> U:
+def deserialize_to(class_: Type[U], value: Simple) -> U:
     pass  # pragma: no cover
 
 
 @overload
-def _deserialize_to(class_: object, value: Simple) -> Extended:
+def deserialize_to(class_: object, value: Simple) -> Extended:
     pass  # pragma: no cover
 
 
-def _deserialize_to(class_: object, value: Simple) -> Extended:
+def deserialize_to(class_: object, value: Simple) -> Extended:
+    """
+    Convert the already decoded `value` (see [`decode`]) into an object of type
+    `class_`.
+
+    [`decode`]: ref:ethereum_rlp.rlp.decode
+    """
+    origin = get_origin(class_)
+
+    while origin is Annotated:
+        assert isinstance(class_, _Annotation)
+        result, class_ = _deserialize_annotated(class_, value)
+        if result is not None:
+            return result
+        origin = get_origin(class_)
+
     if not isinstance(class_, type):
         return _deserialize_to_annotation(class_, value)
     elif is_dataclass(class_):
@@ -185,7 +203,7 @@ def _deserialize_to(class_: object, value: Simple) -> Extended:
 
 def _deserialize_to_dataclass(cls: Type[U], decoded: Simple) -> U:
     assert is_dataclass(cls)
-    hints = get_type_hints(cls)
+    hints = get_type_hints(cls, include_extras=True)
     target_fields = fields(cls)
 
     if isinstance(decoded, bytes):
@@ -204,7 +222,7 @@ def _deserialize_to_dataclass(cls: Type[U], decoded: Simple) -> U:
     for value, target_field in zip(decoded, target_fields):
         resolved_type = hints[target_field.name]
         try:
-            values[target_field.name] = _deserialize_to(resolved_type, value)
+            values[target_field.name] = deserialize_to(resolved_type, value)
         except Exception as e:
             msg = f"cannot decode field `{cls.__name__}.{target_field.name}`"
             raise DecodingError(msg) from e
@@ -245,6 +263,39 @@ def _deserialize_to_uint(
         raise DecodingError from e
 
 
+@runtime_checkable
+class _Annotation(Protocol):
+    __metadata__: Sequence[object]
+    __origin__: object
+
+
+def _deserialize_annotated(
+    annotation: _Annotation, value: Simple
+) -> Union[Tuple[Extended, None], Tuple[None, object]]:
+    codecs = [x for x in annotation.__metadata__ if isinstance(x, With)]
+    if not codecs:
+        return (None, annotation.__origin__)
+
+    if len(codecs) > 1:
+        raise Exception(
+            "multiple rlp.With annotations applied to the same type"
+        )
+
+    codec = codecs[0]
+    result = codec._decoder(value)
+
+    try:
+        assert isinstance(
+            result, annotation.__origin__  # type: ignore[arg-type]
+        ), "annotated returned wrong type"
+    except TypeError as e:
+        # TODO: Check annotation types that don't work with `isinstance`.
+        msg = f"annotation {annotation.__origin__} doesn't support isinstance"
+        raise NotImplementedError(msg) from e
+
+    return (codec._decoder(value), None)
+
+
 def _deserialize_to_annotation(annotation: object, value: Simple) -> Extended:
     origin = get_origin(annotation)
     if origin is Union:
@@ -265,7 +316,7 @@ def _deserialize_to_union(annotation: object, value: Simple) -> Extended:
     failures = []
     for argument in arguments:
         try:
-            success = _deserialize_to(argument, value)
+            success = deserialize_to(argument, value)
         except Exception as e:
             failures.append(e)
             continue
@@ -295,7 +346,7 @@ def _deserialize_to_tuple(
     decoded = []
     for index, (argument, value) in enumerate(zip(arguments, values)):
         try:
-            deserialized = _deserialize_to(argument, value)
+            deserialized = deserialize_to(argument, value)
         except Exception as e:
             msg = f"cannot decode tuple element {index} of type `{argument}`"
             raise DecodingError(msg) from e
@@ -313,7 +364,7 @@ def _deserialize_to_list(
     results = []
     for index, value in enumerate(values):
         try:
-            deserialized = _deserialize_to(argument, value)
+            deserialized = deserialize_to(argument, value)
         except Exception as e:
             msg = f"cannot decode list item {index} of type `{annotation}`"
             raise DecodingError(msg) from e
@@ -467,3 +518,18 @@ def decode_item_length(encoded_data: Bytes) -> int:
         )
 
     return 1 + length_length + decoded_data_length
+
+
+Decoder: TypeAlias = Callable[[Simple], Extended]
+
+
+class With:
+    """
+    When used with [`Annotated`][0], indicates that a value needs to be
+    encoded/decoded using a custom function.
+
+    [0]: https://docs.python.org/3/library/typing.html#typing.Annotated
+    """
+
+    def __init__(self, decoder: Decoder) -> None:
+        self._decoder = decoder
