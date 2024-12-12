@@ -381,6 +381,8 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
         return encoded_bytes
     elif encoded_bytes[0] <= 0xB7:
         len_raw_data = encoded_bytes[0] - 0x80
+        if len_raw_data < 0:
+            raise DecodingError("negative length")
         if len_raw_data >= len(encoded_bytes):
             raise DecodingError("truncated")
         raw_data = encoded_bytes[1 : 1 + len_raw_data]
