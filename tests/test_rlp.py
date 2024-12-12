@@ -295,6 +295,15 @@ def test_decode_to_bytes__long_out_of_bounds() -> None:
         rlp.decode_to_bytes(input)
 
 
+@pytest.mark.parametrize(
+    "encoded_bytes",
+    [b"~\xbc\xc5^\xbe\xff", b"Q59:\xba\xf4\xda\x05\xb7"],
+)
+def test_decode_to_bytes__negative_length(encoded_bytes: bytes) -> None:
+    with pytest.raises(DecodingError, match="negative length"):
+        rlp.decode_to_bytes(encoded_bytes)
+
+
 def test_decode_to__bytes() -> None:
     expected = bytes(b"\x83" * 55)
     input = bytes([0xB7]) + expected
