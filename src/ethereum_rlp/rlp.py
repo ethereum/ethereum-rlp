@@ -2,6 +2,7 @@
 Defines the serialization and deserialization format used throughout Ethereum.
 """
 
+import sys
 from dataclasses import Field, astuple, fields, is_dataclass
 from typing import (
     Annotated,
@@ -29,6 +30,15 @@ from ethereum_types.bytes import Bytes, FixedBytes
 from ethereum_types.numeric import FixedUnsigned, Uint
 
 from .exceptions import DecodingError, EncodingError
+
+_UNION_TYPES: Tuple[object, ...]
+
+if sys.version_info >= (3, 11):  # pragma: no cover
+    from types import UnionType
+
+    _UNION_TYPES = (Union, UnionType)
+else:  # pragma: no cover
+    _UNION_TYPES = (Union,)
 
 
 class RLP(Protocol):
@@ -298,7 +308,7 @@ def _deserialize_annotated(
 
 def _deserialize_to_annotation(annotation: object, value: Simple) -> Extended:
     origin = get_origin(annotation)
-    if origin is Union:
+    if origin in _UNION_TYPES:
         return _deserialize_to_union(annotation, value)
     elif origin in (Tuple, tuple):
         return _deserialize_to_tuple(annotation, value)
