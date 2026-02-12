@@ -267,6 +267,8 @@ def _deserialize_to_uint(
 ) -> Union[Uint, FixedUnsigned]:
     if not isinstance(decoded, bytes):
         raise DecodingError("invalid uint")
+    if len(decoded) > 0 and decoded[0] == 0:
+        raise DecodingError("non-canonical integer")
     try:
         return class_.from_be_bytes(decoded)
     except ValueError as e:

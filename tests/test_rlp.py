@@ -353,6 +353,11 @@ def test_decode_to__uint_sequence() -> None:
         rlp.decode_to(Uint, b"\xc0")
 
 
+def test_decode_to__uint_non_canonical_zero() -> None:
+    with pytest.raises(DecodingError, match="non-canonical integer"):
+        rlp.decode_to(Uint, b"\x00")
+
+
 def test_decode_to__u8_invalid_len() -> None:
     with pytest.raises(DecodingError):
         rlp.decode_to(U8, b"\x82\x01\xff")
