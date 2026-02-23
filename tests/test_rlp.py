@@ -300,6 +300,12 @@ def test_decode_to_bytes__rejects_trailing_bytes() -> None:
         rlp.decode_to_bytes(b"\x80\x00")
 
 
+def test_decode_to_bytes__rejects_trailing_bytes_long() -> None:
+    encoded = b"\xB8\x38" + (b"\x00" * 0x38)
+    with pytest.raises(DecodingError):
+        rlp.decode_to_bytes(encoded + b"\x00")
+
+
 @pytest.mark.parametrize(
     "encoded_bytes",
     [b"~\xbc\xc5^\xbe\xff", b"Q59:\xba\xf4\xda\x05\xb7"],
@@ -661,6 +667,12 @@ def test_decode_to_sequence__out_of_bounds_item() -> None:
 def test_decode_to_sequence__rejects_trailing_bytes() -> None:
     with pytest.raises(DecodingError):
         rlp.decode_to_sequence(b"\xc0\x00")
+
+
+def test_decode_to_sequence__rejects_trailing_bytes_long() -> None:
+    encoded = b"\xF8\x38" + (b"\x80" * 0x38)
+    with pytest.raises(DecodingError):
+        rlp.decode_to_sequence(encoded + b"\x00")
 
 
 def test_decode_to_sequence__out_of_bounds() -> None:
