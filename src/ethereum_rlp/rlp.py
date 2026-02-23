@@ -148,11 +148,6 @@ def decode(encoded_data: Bytes) -> Simple:
     if len(encoded_data) <= 0:
         raise DecodingError("Cannot decode empty bytestring")
 
-    # `decode` is a single-object API. If the first encoded item is shorter
-    # than the full input buffer, trailing bytes are present.
-    if decode_item_length(encoded_data) < len(encoded_data):
-        raise DecodingError("input contains more than one value")
-
     if encoded_data[0] <= 0xBF:
         # This means that the raw data is of type bytes
         return decode_to_bytes(encoded_data)
@@ -402,6 +397,8 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
             raise DecodingError("negative length")
         if len_raw_data >= len(encoded_bytes):
             raise DecodingError("truncated")
+        if 1 + len_raw_data < len(encoded_bytes):
+            raise DecodingError("input contains more than one value")
         raw_data = encoded_bytes[1 : 1 + len_raw_data]
         if len_raw_data == 1 and raw_data[0] < 0x80:
             raise DecodingError
@@ -422,6 +419,8 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
         decoded_data_end_idx = decoded_data_start_idx + int(len_decoded_data)
         if decoded_data_end_idx - 1 >= len(encoded_bytes):
             raise DecodingError
+        if decoded_data_end_idx < len(encoded_bytes):
+            raise DecodingError("input contains more than one value")
         return encoded_bytes[decoded_data_start_idx:decoded_data_end_idx]
 
 
@@ -434,6 +433,8 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
         len_joined_encodings = encoded_sequence[0] - 0xC0
         if len_joined_encodings >= len(encoded_sequence):
             raise DecodingError
+        if 1 + len_joined_encodings < len(encoded_sequence):
+            raise DecodingError("input contains more than one value")
         joined_encodings = encoded_sequence[1 : 1 + len_joined_encodings]
     else:
         joined_encodings_start_idx = 1 + encoded_sequence[0] - 0xF7
@@ -451,6 +452,8 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
         )
         if joined_encodings_end_idx - 1 >= len(encoded_sequence):
             raise DecodingError
+        if joined_encodings_end_idx < len(encoded_sequence):
+            raise DecodingError("input contains more than one value")
         joined_encodings = encoded_sequence[
             joined_encodings_start_idx:joined_encodings_end_idx
         ]
