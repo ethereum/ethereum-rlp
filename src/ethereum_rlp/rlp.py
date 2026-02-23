@@ -148,6 +148,11 @@ def decode(encoded_data: Bytes) -> Simple:
     if len(encoded_data) <= 0:
         raise DecodingError("Cannot decode empty bytestring")
 
+    # `decode` is a single-object API. If the first encoded item is shorter
+    # than the full input buffer, trailing bytes are present.
+    if decode_item_length(encoded_data) < len(encoded_data):
+        raise DecodingError("input contains more than one value")
+
     if encoded_data[0] <= 0xBF:
         # This means that the raw data is of type bytes
         return decode_to_bytes(encoded_data)

@@ -697,6 +697,22 @@ def test_decode__failure_empty_bytes() -> None:
         rlp.decode(b"")
 
 
+def test_decode__rejects_trailing_bytes_after_string() -> None:
+    with pytest.raises(DecodingError):
+        rlp.decode(b"\x80\x00")
+
+
+def test_decode__rejects_trailing_bytes_after_list() -> None:
+    with pytest.raises(DecodingError):
+        rlp.decode(b"\xc0\x00")
+
+
+def test_decode_to__rejects_trailing_bytes() -> None:
+    encoded = rlp.encode(Stuff(toggle=True, number=Uint(3), sequence=[]))
+    with pytest.raises(DecodingError):
+        rlp.decode_to(Stuff, encoded + b"\x00")
+
+
 def test_round_trip_encoding_and_decoding() -> None:
     test_cases: List[Extended] = [
         b"",
