@@ -529,7 +529,8 @@ def decode_item_length(encoded_data: Bytes) -> int:
         decoded_data_length = first_rlp_byte - 0xC0
     # This occurs only when the raw_data is a sequence of objects and
     # doesn't fall into the above cases.
-    elif first_rlp_byte <= 0xFF:
+    else:
+        assert first_rlp_byte <= 0xFF
         length_length = first_rlp_byte - 0xF7
         if length_length >= len(encoded_data):
             raise DecodingError("truncated")
