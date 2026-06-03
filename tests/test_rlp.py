@@ -120,7 +120,7 @@ def test_encode__uint_byte_max() -> None:
     assert rlp.encode(Uint(255)) == b"\x81\xff"
 
 
-def test_encode_Suint256_0() -> None:
+def test_encode_uint256_0() -> None:
     assert rlp.encode(U256(0)) == b"\x80"
 
 
@@ -320,6 +320,24 @@ class WithInt:
 def test_decode_to__int() -> None:
     with pytest.raises(DecodingError):
         rlp.decode_to(WithInt, b"\xc1\x00")
+
+
+def test_decode_to__uint_enum() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+
+    class MyUintEnum(
+        ethereum_types_enum.UintEnum  # type: ignore[name-defined]
+    ):
+        RED = Uint(0)
+        BLUE = Uint(1)
+
+    @dataclass
+    class WithUintEnum:
+        foo: MyUintEnum
+
+    actual = rlp.decode_to(WithUintEnum, b"\xc1\x01")
+
+    assert actual.foo is MyUintEnum.BLUE
 
 
 def test_decode_to__dataclass_bytes_not_sequence() -> None:
