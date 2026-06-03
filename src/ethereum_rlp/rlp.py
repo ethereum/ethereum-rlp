@@ -398,7 +398,7 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
         if len_raw_data >= len(encoded_bytes):
             raise DecodingError("truncated")
         if 1 + len_raw_data < len(encoded_bytes):
-            raise DecodingError("input contains more than one value")
+            raise DecodingError("trailing bytes")
         raw_data = encoded_bytes[1 : 1 + len_raw_data]
         if len_raw_data == 1 and raw_data[0] < 0x80:
             raise DecodingError
@@ -408,7 +408,7 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
         # starts from.
         decoded_data_start_idx = 1 + encoded_bytes[0] - 0xB7
         if decoded_data_start_idx - 1 >= len(encoded_bytes):
-            raise DecodingError
+            raise DecodingError("truncated")
         if encoded_bytes[1] == 0:
             raise DecodingError
         len_decoded_data = int(
@@ -418,9 +418,9 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
             raise DecodingError
         decoded_data_end_idx = decoded_data_start_idx + int(len_decoded_data)
         if decoded_data_end_idx - 1 >= len(encoded_bytes):
-            raise DecodingError
+            raise DecodingError("truncated")
         if decoded_data_end_idx < len(encoded_bytes):
-            raise DecodingError("input contains more than one value")
+            raise DecodingError("trailing bytes")
         return encoded_bytes[decoded_data_start_idx:decoded_data_end_idx]
 
 
@@ -432,14 +432,14 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
     if encoded_sequence[0] <= 0xF7:
         len_joined_encodings = encoded_sequence[0] - 0xC0
         if len_joined_encodings >= len(encoded_sequence):
-            raise DecodingError
+            raise DecodingError("truncated")
         if 1 + len_joined_encodings < len(encoded_sequence):
-            raise DecodingError("input contains more than one value")
+            raise DecodingError("trailing bytes")
         joined_encodings = encoded_sequence[1 : 1 + len_joined_encodings]
     else:
         joined_encodings_start_idx = 1 + encoded_sequence[0] - 0xF7
         if joined_encodings_start_idx - 1 >= len(encoded_sequence):
-            raise DecodingError
+            raise DecodingError("truncated")
         if encoded_sequence[1] == 0:
             raise DecodingError
         len_joined_encodings = int(
@@ -451,9 +451,9 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
             joined_encodings_start_idx + len_joined_encodings
         )
         if joined_encodings_end_idx - 1 >= len(encoded_sequence):
-            raise DecodingError
+            raise DecodingError("truncated")
         if joined_encodings_end_idx < len(encoded_sequence):
-            raise DecodingError("input contains more than one value")
+            raise DecodingError("trailing bytes")
         joined_encodings = encoded_sequence[
             joined_encodings_start_idx:joined_encodings_end_idx
         ]
@@ -474,7 +474,7 @@ def decode_joined_encodings(joined_encodings: Bytes) -> Sequence[Simple]:
             joined_encodings[item_start_idx:]
         )
         if item_start_idx + encoded_item_length - 1 >= len(joined_encodings):
-            raise DecodingError
+            raise DecodingError("truncated")
         encoded_item = joined_encodings[
             item_start_idx : item_start_idx + encoded_item_length
         ]
@@ -517,7 +517,7 @@ def decode_item_length(encoded_data: Bytes) -> int:
     elif first_rlp_byte <= 0xBF:
         length_length = first_rlp_byte - 0xB7
         if length_length >= len(encoded_data):
-            raise DecodingError
+            raise DecodingError("truncated")
         if encoded_data[1] == 0:
             raise DecodingError
         decoded_data_length = int(
@@ -532,7 +532,7 @@ def decode_item_length(encoded_data: Bytes) -> int:
     elif first_rlp_byte <= 0xFF:
         length_length = first_rlp_byte - 0xF7
         if length_length >= len(encoded_data):
-            raise DecodingError
+            raise DecodingError("truncated")
         if encoded_data[1] == 0:
             raise DecodingError
         decoded_data_length = int(

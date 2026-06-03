@@ -296,13 +296,13 @@ def test_decode_to_bytes__long_out_of_bounds() -> None:
 
 
 def test_decode_to_bytes__rejects_trailing_bytes() -> None:
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode_to_bytes(b"\x80\x00")
 
 
 def test_decode_to_bytes__rejects_trailing_bytes_long() -> None:
     encoded = b"\xB8\x38" + (b"\x00" * 0x38)
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode_to_bytes(encoded + b"\x00")
 
 
@@ -665,13 +665,13 @@ def test_decode_to_sequence__out_of_bounds_item() -> None:
 
 
 def test_decode_to_sequence__rejects_trailing_bytes() -> None:
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode_to_sequence(b"\xc0\x00")
 
 
 def test_decode_to_sequence__rejects_trailing_bytes_long() -> None:
     encoded = b"\xF8\x38" + (b"\x80" * 0x38)
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode_to_sequence(encoded + b"\x00")
 
 
@@ -720,18 +720,18 @@ def test_decode__failure_empty_bytes() -> None:
 
 
 def test_decode__rejects_trailing_bytes_after_string() -> None:
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode(b"\x80\x00")
 
 
 def test_decode__rejects_trailing_bytes_after_list() -> None:
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode(b"\xc0\x00")
 
 
 def test_decode_to__rejects_trailing_bytes() -> None:
     encoded = rlp.encode(Stuff(toggle=True, number=Uint(3), sequence=[]))
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError, match="trailing"):
         rlp.decode_to(Stuff, encoded + b"\x00")
 
 
