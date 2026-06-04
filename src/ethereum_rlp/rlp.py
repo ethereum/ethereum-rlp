@@ -2,14 +2,16 @@
 Defines the serialization and deserialization format used throughout Ethereum.
 """
 
+import collections.abc
 import sys
-from dataclasses import Field, astuple, fields, is_dataclass
+from dataclasses import Field, fields, is_dataclass
 from typing import (
     Annotated,
     Any,
     Callable,
     ClassVar,
     Dict,
+    Iterable,
     List,
     Protocol,
     Sequence,
@@ -27,7 +29,7 @@ from typing import (
 )
 
 from ethereum_types.bytes import Bytes, FixedBytes
-from ethereum_types.numeric import FixedUnsigned, Uint
+from ethereum_types.numeric import FixedUnsigned, Uint, Unsigned
 
 from .exceptions import DecodingError, EncodingError
 
@@ -61,28 +63,38 @@ Extended: TypeAlias = Union[
 #
 # RLP Encode
 #
+# NOTE: RLP encoding is performance sensitive. These functions correspond to
+# roughly 7% of the runtime of the `fill` tool. Don't modify them without
+# benchmarking for performance regressions. Seemingly minor changes can have
+# surprising performance impacts.
 
 
 def encode(raw_data: Extended) -> Bytes:
     """
     Encodes `raw_data` into a sequence of bytes using RLP.
     """
-    if isinstance(raw_data, Sequence):
-        if isinstance(raw_data, (bytearray, bytes)):
-            return encode_bytes(raw_data)
-        elif isinstance(raw_data, str):
-            return encode_bytes(raw_data.encode())
-        else:
-            return encode_sequence(raw_data)
-    elif isinstance(raw_data, (Uint, FixedUnsigned)):
-        return encode(raw_data.to_be_bytes())
+    # These if statements are ordered by frequency in `fill` (except `str` must
+    # precede `Sequence`).
+    if isinstance(raw_data, (bytes, bytearray)):
+        return encode_bytes(raw_data)
+    elif isinstance(raw_data, Unsigned):
+        return encode_bytes(raw_data.to_be_bytes())
+    elif isinstance(raw_data, str):
+        return encode_bytes(raw_data.encode())
+    elif isinstance(raw_data, collections.abc.Sequence):
+        # Testing against `collections.abc.Sequence` is equivalent to
+        # `typing.Sequence`, but faster.
+        # `cast()` has a performance penalty, whereas `type: ignore` is free.
+        return encode_sequence(raw_data)  # type: ignore[arg-type]
+    elif is_dataclass(raw_data):
+        return encode_sequence(
+            getattr(raw_data, field.name) for field in fields(raw_data)
+        )
     elif isinstance(raw_data, bool):
         if raw_data:
             return encode_bytes(b"\x01")
         else:
             return encode_bytes(b"")
-    elif is_dataclass(raw_data):
-        return encode(astuple(raw_data))
     else:
         raise EncodingError(
             "RLP Encoding of type {} is not supported".format(type(raw_data))
@@ -109,7 +121,9 @@ def encode_bytes(raw_bytes: Bytes) -> Bytes:
         )
 
 
-def encode_sequence(raw_sequence: Sequence[Extended]) -> Bytes:
+def encode_sequence(
+    raw_sequence: Iterable[Extended],
+) -> Bytes:
     """
     Encodes a list of RLP encodable objects (`raw_sequence`) using RLP.
     """
@@ -127,7 +141,7 @@ def encode_sequence(raw_sequence: Sequence[Extended]) -> Bytes:
         )
 
 
-def join_encodings(raw_sequence: Sequence[Extended]) -> Bytes:
+def join_encodings(raw_sequence: Iterable[Extended]) -> Bytes:
     """
     Obtain concatenation of rlp encoding for each item in the sequence
     raw_sequence.
