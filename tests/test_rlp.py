@@ -351,6 +351,122 @@ def test_decode_to__uint_enum() -> None:
     assert actual.foo is MyUintEnum.BLUE
 
 
+def test_decode_to__uint_flag() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+    if not hasattr(ethereum_types_enum, "UintFlag"):
+        pytest.skip("no UintFlag class")
+
+    class MyUintFlag(
+        ethereum_types_enum.UintFlag  # type: ignore[name-defined]
+    ):
+        RED = Uint(1)
+        BLUE = Uint(2)
+        GREEN = Uint(4)
+
+    @dataclass
+    class WithUintFlag:
+        foo: MyUintFlag
+
+    actual = rlp.decode_to(WithUintFlag, b"\xc1\x01")
+
+    assert actual.foo is MyUintFlag.RED
+
+
+def test_decode_to__uint_flag_keep() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+    if not hasattr(ethereum_types_enum, "UintFlag"):
+        pytest.skip("no UintFlag class")
+
+    class MyUintFlag(
+        ethereum_types_enum.UintFlag  # type: ignore[name-defined]
+    ):
+        RED = Uint(1)
+        BLUE = Uint(2)
+        GREEN = Uint(4)
+
+    @dataclass
+    class WithUintFlag:
+        foo: MyUintFlag
+
+    actual = rlp.decode_to(WithUintFlag, b"\xc1\x08")
+
+    assert actual.foo == Uint(8)
+    assert isinstance(actual.foo, MyUintFlag)
+
+
+def test_decode_to__uint_flag_conform() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+    if not hasattr(ethereum_types_enum, "UintFlag"):
+        pytest.skip("no UintFlag class")
+
+    from enum import CONFORM
+
+    class MyUintFlag(
+        ethereum_types_enum.UintFlag,  # type: ignore[name-defined]
+        boundary=CONFORM,  # type: ignore[call-arg]
+    ):
+        RED = Uint(1)
+        BLUE = Uint(2)
+        GREEN = Uint(4)
+
+    @dataclass
+    class WithUintFlag:
+        foo: MyUintFlag
+
+    actual = rlp.decode_to(WithUintFlag, b"\xc1\x0a")
+
+    assert actual.foo is MyUintFlag.BLUE
+
+
+def test_decode_to__uint_flag_eject() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+    if not hasattr(ethereum_types_enum, "UintFlag"):
+        pytest.skip("no UintFlag class")
+
+    from enum import EJECT
+
+    class MyUintFlag(
+        ethereum_types_enum.UintFlag,  # type: ignore[name-defined]
+        boundary=EJECT,  # type: ignore[call-arg]
+    ):
+        RED = Uint(1)
+        BLUE = Uint(2)
+        GREEN = Uint(4)
+
+    @dataclass
+    class WithUintFlag:
+        foo: MyUintFlag
+
+    actual = rlp.decode_to(WithUintFlag, b"\xc1\x0a")
+
+    assert actual.foo == Uint(10)
+    assert isinstance(actual.foo, Uint)
+    assert not isinstance(actual.foo, MyUintFlag)
+
+
+def test_decode_to__uint_flag_strict() -> None:
+    ethereum_types_enum = pytest.importorskip("ethereum_types.enum")
+    if not hasattr(ethereum_types_enum, "UintFlag"):
+        pytest.skip("no UintFlag class")
+
+    from enum import STRICT
+
+    class MyUintFlag(
+        ethereum_types_enum.UintFlag,  # type: ignore[name-defined]
+        boundary=STRICT,  # type: ignore[call-arg]
+    ):
+        RED = Uint(1)
+        BLUE = Uint(2)
+        GREEN = Uint(4)
+
+    @dataclass
+    class WithUintFlag:
+        foo: MyUintFlag
+
+    with pytest.raises(DecodingError, match="invalid value 10"):
+        rlp.decode_to(WithUintFlag, b"\xc1\x0a")
+
+
 def test_decode_to__dataclass_bytes_not_sequence() -> None:
     with pytest.raises(DecodingError, match="got `bytes`"):
         rlp.decode_to(Stuff, b"\x80")
