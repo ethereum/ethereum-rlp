@@ -475,11 +475,13 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
     return decode_joined_encodings(joined_encodings)
 
 
-#: Longest prefix [`decode_item_length`][1] can read: the first byte, plus at
-#: most eight more holding a big-endian length.
-#:
-#: [1]: ref:ethereum_rlp.rlp.decode_item_length
 ITEM_LENGTH_PREFIX_MAX = 9
+"""
+Longest prefix [`decode_item_length`] can read: the first byte, plus at most
+eight more holding a big-endian length.
+
+[`decode_item_length`]: ref:ethereum_rlp.rlp.decode_item_length
+"""
 
 
 def decode_joined_encodings(joined_encodings: Bytes) -> Sequence[Simple]:
@@ -512,11 +514,10 @@ def decode_joined_encodings(joined_encodings: Bytes) -> Sequence[Simple]:
 
 def decode_item_length(encoded_data: Bytes) -> int:
     """
-    Find the length of the rlp encoding for the first object in the
-    encoded sequence.
+    Return the encoded length of the first RLP item.
 
-    Here `encoded_data` refers to concatenation of rlp encoding for each
-    item in a sequence.
+    `encoded_data` must contain the first item's complete length prefix.
+    Bytes beyond that prefix are ignored.
     """
     if len(encoded_data) <= 0:
         raise DecodingError
