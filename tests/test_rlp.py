@@ -905,3 +905,91 @@ def test_decode_item_length__long_long() -> None:
     actual = rlp.decode_item_length(b"\xf8" + b"\xff")
     expected = 0xFF + 1 + 1
     assert actual == expected
+
+
+def _item_length_or_error(data: bytes) -> Tuple[str, object]:
+    try:
+        return ("ok", rlp.decode_item_length(Bytes(data)))
+    except DecodingError as e:
+        return ("error", e.args)
+
+
+@pytest.mark.parametrize("extra", [9, 64])
+@pytest.mark.parametrize("filler", [b"\x00", b"\x01", b"\xff"])
+def test_decode_item_length__ignores_bytes_past_the_prefix(
+    extra: int, filler: bytes
+) -> None:
+    """
+    Truncating the input to `ITEM_LENGTH_PREFIX_MAX` must not change the
+    result or the error, for any first byte.
+
+    `decode_joined_encodings` relies on this to avoid copying the whole
+    remaining buffer once per item.
+    """
+    for first_byte in range(256):
+        data = bytes([first_byte]) + filler * extra
+        assert _item_length_or_error(data) == _item_length_or_error(
+            data[: rlp.ITEM_LENGTH_PREFIX_MAX]
+        ), f"first_byte=0x{first_byte:02x}"
+
+
+def test_decode_item_length__prefix_max_is_tight() -> None:
+    """
+    `ITEM_LENGTH_PREFIX_MAX` must cover the longest prefix: the first byte
+    plus the eight length bytes that `0xBF` and `0xFF` announce.
+    """
+    for first_byte in (0xBF, 0xFF):
+        data = bytes([first_byte]) + b"\x01" * 8
+        assert len(data) == rlp.ITEM_LENGTH_PREFIX_MAX
+        assert _item_length_or_error(data)[0] == "ok"
+        # One byte short is a truncated encoding, not a silent misread.
+        assert _item_length_or_error(data[:-1]) == ("error", ("truncated",))
+
+
+def test_decode_joined_encodings__bounds_the_length_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Each item's length must be read from a bounded prefix.
+
+    Passing the whole remaining buffer instead copies it once per item,
+    making a sequence decode quadratic in its encoded size. Here that would
+    hand over ~20 kB on the first of 500 items rather than 9 bytes.
+    """
+    real = rlp.decode_item_length
+    probe_sizes = []
+
+    def spy(encoded_data: Bytes) -> int:
+        probe_sizes.append(len(encoded_data))
+        return real(encoded_data)
+
+    monkeypatch.setattr(rlp, "decode_item_length", spy)
+
+    count = 500
+    items = [b"\x11" * 40] * count
+    joined = b"".join(rlp.encode(item) for item in items)
+
+    decoded = rlp.decode_joined_encodings(Bytes(joined))
+
+    assert list(decoded) == items
+    assert len(probe_sizes) == count
+    assert max(probe_sizes) <= rlp.ITEM_LENGTH_PREFIX_MAX
+
+
+@pytest.mark.parametrize("item_size", [55, 56, 255, 256, 65535, 65536])
+def test_decode_joined_encodings__round_trips_multi_byte_length_prefixes(
+    item_size: int,
+) -> None:
+    """
+    Items whose length needs 0, 1, 2 or 3 length bytes must round-trip
+    as byte strings, as list payloads, nested, and mixed with short items,
+    since those are the cases that read past the first byte of the prefix.
+    """
+    items: List[rlp.Simple] = [
+        b"\x11",
+        b"\x22" * item_size,
+        [b"\x33" * item_size, b"\x44"],
+        [[b"\x55" * item_size]],
+        b"\x66" * item_size,
+    ]
+    assert rlp.decode(rlp.encode(items)) == items
