@@ -403,39 +403,10 @@ def decode_to_bytes(encoded_bytes: Bytes) -> Bytes:
     Decodes a rlp encoded byte stream assuming that the decoded data
     should be of type `bytes`.
     """
+    # A lone byte below 0x80 decodes to the caller's own object, as before.
     if len(encoded_bytes) == 1 and encoded_bytes[0] < 0x80:
         return encoded_bytes
-    elif encoded_bytes[0] <= 0xB7:
-        len_raw_data = encoded_bytes[0] - 0x80
-        if len_raw_data < 0:
-            raise DecodingError("negative length")
-        if len_raw_data >= len(encoded_bytes):
-            raise DecodingError("truncated")
-        if 1 + len_raw_data < len(encoded_bytes):
-            raise DecodingError("trailing bytes")
-        raw_data = encoded_bytes[1 : 1 + len_raw_data]
-        if len_raw_data == 1 and raw_data[0] < 0x80:
-            raise DecodingError
-        return raw_data
-    else:
-        # This is the index in the encoded data at which decoded data
-        # starts from.
-        decoded_data_start_idx = 1 + encoded_bytes[0] - 0xB7
-        if decoded_data_start_idx - 1 >= len(encoded_bytes):
-            raise DecodingError("truncated")
-        if encoded_bytes[1] == 0:
-            raise DecodingError
-        len_decoded_data = int(
-            Uint.from_be_bytes(encoded_bytes[1:decoded_data_start_idx])
-        )
-        if len_decoded_data < 0x38:
-            raise DecodingError
-        decoded_data_end_idx = decoded_data_start_idx + int(len_decoded_data)
-        if decoded_data_end_idx - 1 >= len(encoded_bytes):
-            raise DecodingError("truncated")
-        if decoded_data_end_idx < len(encoded_bytes):
-            raise DecodingError("trailing bytes")
-        return encoded_bytes[decoded_data_start_idx:decoded_data_end_idx]
+    return _decode_to_bytes(encoded_bytes, 0, len(encoded_bytes))
 
 
 def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
@@ -443,45 +414,7 @@ def decode_to_sequence(encoded_sequence: Bytes) -> Sequence[Simple]:
     Decodes a rlp encoded byte stream assuming that the decoded data
     should be of type `Sequence` of objects.
     """
-    if encoded_sequence[0] <= 0xF7:
-        len_joined_encodings = encoded_sequence[0] - 0xC0
-        if len_joined_encodings >= len(encoded_sequence):
-            raise DecodingError("truncated")
-        if 1 + len_joined_encodings < len(encoded_sequence):
-            raise DecodingError("trailing bytes")
-        joined_encodings = encoded_sequence[1 : 1 + len_joined_encodings]
-    else:
-        joined_encodings_start_idx = 1 + encoded_sequence[0] - 0xF7
-        if joined_encodings_start_idx - 1 >= len(encoded_sequence):
-            raise DecodingError("truncated")
-        if encoded_sequence[1] == 0:
-            raise DecodingError
-        len_joined_encodings = int(
-            Uint.from_be_bytes(encoded_sequence[1:joined_encodings_start_idx])
-        )
-        if len_joined_encodings < 0x38:
-            raise DecodingError
-        joined_encodings_end_idx = (
-            joined_encodings_start_idx + len_joined_encodings
-        )
-        if joined_encodings_end_idx - 1 >= len(encoded_sequence):
-            raise DecodingError("truncated")
-        if joined_encodings_end_idx < len(encoded_sequence):
-            raise DecodingError("trailing bytes")
-        joined_encodings = encoded_sequence[
-            joined_encodings_start_idx:joined_encodings_end_idx
-        ]
-
-    return decode_joined_encodings(joined_encodings)
-
-
-ITEM_LENGTH_PREFIX_MAX = 9
-"""
-Longest prefix [`decode_item_length`] can read: the first byte, plus at most
-eight more holding a big-endian length.
-
-[`decode_item_length`]: ref:ethereum_rlp.rlp.decode_item_length
-"""
+    return _decode_to_sequence(encoded_sequence, 0, len(encoded_sequence))
 
 
 def decode_joined_encodings(joined_encodings: Bytes) -> Sequence[Simple]:
@@ -489,27 +422,7 @@ def decode_joined_encodings(joined_encodings: Bytes) -> Sequence[Simple]:
     Decodes `joined_encodings`, which is a concatenation of RLP encoded
     objects.
     """
-    decoded_sequence = []
-
-    item_start_idx = 0
-    while item_start_idx < len(joined_encodings):
-        # Pass only the prefix `decode_item_length` can read. Slicing the whole
-        # remainder instead copies it once per item, which makes decoding a
-        # sequence quadratic in its encoded size.
-        encoded_item_length = decode_item_length(
-            joined_encodings[
-                item_start_idx : item_start_idx + ITEM_LENGTH_PREFIX_MAX
-            ]
-        )
-        if item_start_idx + encoded_item_length - 1 >= len(joined_encodings):
-            raise DecodingError("truncated")
-        encoded_item = joined_encodings[
-            item_start_idx : item_start_idx + encoded_item_length
-        ]
-        decoded_sequence.append(decode(encoded_item))
-        item_start_idx += encoded_item_length
-
-    return decoded_sequence
+    return _decode_joined_encodings(joined_encodings, 0, len(joined_encodings))
 
 
 def decode_item_length(encoded_data: Bytes) -> int:
@@ -519,10 +432,121 @@ def decode_item_length(encoded_data: Bytes) -> int:
     `encoded_data` must contain the first item's complete length prefix.
     Bytes beyond that prefix are ignored.
     """
-    if len(encoded_data) <= 0:
+    return _decode_item_length(encoded_data, 0, len(encoded_data))
+
+
+#
+# The functions below decode `buffer[start:end]` without slicing it. Nested
+# items are read in place, so only the decoded byte strings are copied, rather
+# than every level of a nested sequence copying its whole payload.
+#
+
+
+def _decode(buffer: Bytes, start: int, end: int) -> Simple:
+    if buffer[start] <= 0xBF:
+        return _decode_to_bytes(buffer, start, end)
+    else:
+        return _decode_to_sequence(buffer, start, end)
+
+
+def _decode_to_bytes(buffer: Bytes, start: int, end: int) -> Bytes:
+    length = end - start
+    first_rlp_byte = buffer[start]
+    if length == 1 and first_rlp_byte < 0x80:
+        return buffer[start:end]
+    elif first_rlp_byte <= 0xB7:
+        len_raw_data = first_rlp_byte - 0x80
+        if len_raw_data < 0:
+            raise DecodingError("negative length")
+        if len_raw_data >= length:
+            raise DecodingError("truncated")
+        if 1 + len_raw_data < length:
+            raise DecodingError("trailing bytes")
+        if len_raw_data == 1 and buffer[start + 1] < 0x80:
+            raise DecodingError
+        return buffer[start + 1 : end]
+    else:
+        # This is the index (relative to `start`) at which decoded data
+        # starts from.
+        decoded_data_start_idx = 1 + first_rlp_byte - 0xB7
+        if decoded_data_start_idx - 1 >= length:
+            raise DecodingError("truncated")
+        if buffer[start + 1] == 0:
+            raise DecodingError
+        len_decoded_data = int(
+            Uint.from_be_bytes(
+                buffer[start + 1 : start + decoded_data_start_idx]
+            )
+        )
+        if len_decoded_data < 0x38:
+            raise DecodingError
+        decoded_data_end_idx = decoded_data_start_idx + len_decoded_data
+        if decoded_data_end_idx - 1 >= length:
+            raise DecodingError("truncated")
+        if decoded_data_end_idx < length:
+            raise DecodingError("trailing bytes")
+        return buffer[start + decoded_data_start_idx : end]
+
+
+def _decode_to_sequence(
+    buffer: Bytes, start: int, end: int
+) -> Sequence[Simple]:
+    length = end - start
+    first_rlp_byte = buffer[start]
+    if first_rlp_byte <= 0xF7:
+        len_joined_encodings = first_rlp_byte - 0xC0
+        if len_joined_encodings >= length:
+            raise DecodingError("truncated")
+        if 1 + len_joined_encodings < length:
+            raise DecodingError("trailing bytes")
+        return _decode_joined_encodings(buffer, start + 1, end)
+    else:
+        joined_encodings_start_idx = 1 + first_rlp_byte - 0xF7
+        if joined_encodings_start_idx - 1 >= length:
+            raise DecodingError("truncated")
+        if buffer[start + 1] == 0:
+            raise DecodingError
+        len_joined_encodings = int(
+            Uint.from_be_bytes(
+                buffer[start + 1 : start + joined_encodings_start_idx]
+            )
+        )
+        if len_joined_encodings < 0x38:
+            raise DecodingError
+        joined_encodings_end_idx = (
+            joined_encodings_start_idx + len_joined_encodings
+        )
+        if joined_encodings_end_idx - 1 >= length:
+            raise DecodingError("truncated")
+        if joined_encodings_end_idx < length:
+            raise DecodingError("trailing bytes")
+        return _decode_joined_encodings(
+            buffer, start + joined_encodings_start_idx, end
+        )
+
+
+def _decode_joined_encodings(
+    buffer: Bytes, start: int, end: int
+) -> Sequence[Simple]:
+    decoded_sequence = []
+
+    item_start_idx = start
+    while item_start_idx < end:
+        encoded_item_length = _decode_item_length(buffer, item_start_idx, end)
+        item_end_idx = item_start_idx + encoded_item_length
+        if item_end_idx - 1 >= end:
+            raise DecodingError("truncated")
+        decoded_sequence.append(_decode(buffer, item_start_idx, item_end_idx))
+        item_start_idx = item_end_idx
+
+    return decoded_sequence
+
+
+def _decode_item_length(buffer: Bytes, start: int, end: int) -> int:
+    if end - start <= 0:
         raise DecodingError
 
-    first_rlp_byte = encoded_data[0]
+    first_rlp_byte = buffer[start]
 
     # This is the length of the big endian representation of the length of
     # rlp encoded object byte stream.
@@ -543,12 +567,12 @@ def decode_item_length(encoded_data: Bytes) -> int:
     # into the above cases
     elif first_rlp_byte <= 0xBF:
         length_length = first_rlp_byte - 0xB7
-        if length_length >= len(encoded_data):
+        if length_length >= end - start:
             raise DecodingError("truncated")
-        if encoded_data[1] == 0:
+        if buffer[start + 1] == 0:
             raise DecodingError
         decoded_data_length = int(
-            Uint.from_be_bytes(encoded_data[1 : 1 + length_length])
+            Uint.from_be_bytes(buffer[start + 1 : start + 1 + length_length])
         )
     # This occurs only when the raw_data is a sequence of objects with
     # length(concatenation of encoding of each object) < 56
@@ -559,12 +583,12 @@ def decode_item_length(encoded_data: Bytes) -> int:
     else:
         assert first_rlp_byte <= 0xFF
         length_length = first_rlp_byte - 0xF7
-        if length_length >= len(encoded_data):
+        if length_length >= end - start:
             raise DecodingError("truncated")
-        if encoded_data[1] == 0:
+        if buffer[start + 1] == 0:
             raise DecodingError
         decoded_data_length = int(
-            Uint.from_be_bytes(encoded_data[1 : 1 + length_length])
+            Uint.from_be_bytes(buffer[start + 1 : start + 1 + length_length])
         )
 
     return 1 + length_length + decoded_data_length
