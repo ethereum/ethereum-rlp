@@ -81,9 +81,10 @@ def encode(raw_data: Extended) -> Bytes:
         return encode_bytes(raw_data.to_be_bytes())
     elif isinstance(raw_data, str):
         return encode_bytes(raw_data.encode())
-    elif isinstance(raw_data, collections.abc.Sequence):
+    elif isinstance(raw_data, (list, tuple, collections.abc.Sequence)):
         # Testing against `collections.abc.Sequence` is equivalent to
-        # `typing.Sequence`, but faster.
+        # `typing.Sequence`, but faster. Checking `list` and `tuple` first
+        # skips the slower abstract base class check for the common cases.
         # `cast()` has a performance penalty, whereas `type: ignore` is free.
         return encode_sequence(raw_data)  # type: ignore[arg-type]
     elif is_dataclass(raw_data):
@@ -101,6 +102,13 @@ def encode(raw_data: Extended) -> Bytes:
         )
 
 
+def _encode_length(length: int) -> bytes:
+    """
+    Return `length` as big-endian bytes without leading zeros.
+    """
+    return length.to_bytes((length.bit_length() + 7) // 8, "big")
+
+
 def encode_bytes(raw_bytes: Bytes) -> Bytes:
     """
     Encodes `raw_bytes`, a sequence of bytes, using RLP.
@@ -113,7 +121,7 @@ def encode_bytes(raw_bytes: Bytes) -> Bytes:
         return bytes([0x80 + len_raw_data]) + raw_bytes
     else:
         # length of raw data represented as big endian bytes
-        len_raw_data_as_be = Uint(len_raw_data).to_be_bytes()
+        len_raw_data_as_be = _encode_length(len_raw_data)
         return (
             bytes([0xB7 + len(len_raw_data_as_be)])
             + len_raw_data_as_be
@@ -133,7 +141,7 @@ def encode_sequence(
     if len_joined_encodings < 0x38:
         return Bytes([0xC0 + len_joined_encodings]) + joined_encodings
     else:
-        len_joined_encodings_as_be = Uint(len_joined_encodings).to_be_bytes()
+        len_joined_encodings_as_be = _encode_length(len_joined_encodings)
         return (
             Bytes([0xF7 + len(len_joined_encodings_as_be)])
             + len_joined_encodings_as_be
@@ -146,7 +154,7 @@ def join_encodings(raw_sequence: Iterable[Extended]) -> Bytes:
     Obtain concatenation of rlp encoding for each item in the sequence
     raw_sequence.
     """
-    return b"".join(encode(item) for item in raw_sequence)
+    return b"".join([encode(item) for item in raw_sequence])
 
 
 #

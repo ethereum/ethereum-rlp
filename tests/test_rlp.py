@@ -14,6 +14,7 @@ from typing import (
 import pytest
 from ethereum_types.bytes import Bytes, Bytes1, Bytes4, Bytes32
 from ethereum_types.numeric import U8, U256, Uint
+from typing_extensions import override
 
 from ethereum_rlp import Extended, rlp
 from ethereum_rlp.exceptions import DecodingError, EncodingError
@@ -75,6 +76,39 @@ def test_encode_bytes__large() -> None:
         + bytearray(b"\x10\x00\x00")
         + bytearray(b"\x83" * 2**20)
     )
+
+
+@pytest.mark.parametrize(
+    "length,prefix",
+    [
+        (56, b"\xb8\x38"),
+        (256, b"\xb9\x01\x00"),
+        (65536, b"\xba\x01\x00\x00"),
+    ],
+)
+def test_encode_bytes__long_length_prefix(length: int, prefix: bytes) -> None:
+    assert rlp.encode_bytes(b"\x83" * length) == prefix + b"\x83" * length
+
+
+def test_encode_sequence__long_length_prefix() -> None:
+    item = b"\xb8\x3c" + b"\x83" * 60
+    assert rlp.encode([b"\x83" * 60]) == b"\xf8\x3e" + item
+
+
+class _Pair(Sequence[Extended]):
+    @override
+    def __getitem__(self, index: int) -> Extended:  # type: ignore[override]
+        return (b"\x01", Uint(2))[index]
+
+    @override
+    def __len__(self) -> int:
+        return 2
+
+
+def test_encode__tuple_and_custom_sequence() -> None:
+    expected = rlp.encode([b"\x01", Uint(2)])
+    assert rlp.encode((b"\x01", Uint(2))) == expected
+    assert rlp.encode(_Pair()) == expected
 
 
 #
