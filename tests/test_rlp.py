@@ -1,3 +1,4 @@
+import collections.abc
 import re
 from dataclasses import dataclass
 from typing import (
@@ -599,6 +600,19 @@ def test_decode_to__list_bytes() -> None:
 def test_decode_to__list_invalid_union() -> None:
     with pytest.raises(DecodingError, match="list item 0"):
         rlp.decode_to(WithList, b"\xc2\xc1\xc0")
+
+
+@dataclass
+class WithSequence:
+    items: Sequence[Uint]
+    abc_items: collections.abc.Sequence[Bytes4]
+
+
+def test_decode_to__sequence() -> None:
+    encoded = rlp.encode([[Uint(1), Uint(2)], [Bytes4(b"\x01\x02\x03\x04")]])
+    actual = rlp.decode_to(WithSequence, encoded)
+    expected = WithSequence([Uint(1), Uint(2)], [Bytes4(b"\x01\x02\x03\x04")])
+    assert actual == expected
 
 
 def decode_len(foo: rlp.Simple) -> Uint:

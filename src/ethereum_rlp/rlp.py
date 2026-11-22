@@ -328,7 +328,9 @@ def _deserialize_to_annotation(annotation: object, value: Simple) -> Extended:
         return _deserialize_to_union(annotation, value)
     elif origin in (Tuple, tuple):
         return _deserialize_to_tuple(annotation, value)
-    elif origin in (List, Sequence, list):
+    # `get_origin()` returns the runtime class: `list` for `List[T]`, and
+    # `collections.abc.Sequence` for `Sequence[T]`.
+    elif origin in (list, collections.abc.Sequence):
         return _deserialize_to_list(annotation, value)
     elif origin is None:
         raise Exception(annotation)
